@@ -23,7 +23,7 @@ Sistema interno de gestão de projetos para o grupo:
 
 - Next.js 15 (App Router) + TypeScript
 - Tailwind CSS
-- Prisma + SQLite (arquivo `prisma/dev.db`, sem servidor externo)
+- Prisma + **Postgres** (Vercel Postgres, Neon, Supabase ou local)
 - NextAuth (estratégia JWT)
 - bcryptjs + zod
 
@@ -102,8 +102,14 @@ src/
     labels.ts
 ```
 
-## Para colocar em produção depois
+## Deploy na Vercel (URL pública)
 
-- Trocar `DATABASE_URL` para Postgres (Neon, Supabase, Railway) — basta mudar o `provider` no `schema.prisma` e rodar `prisma migrate dev`.
-- Gerar um `NEXTAUTH_SECRET` forte (`openssl rand -base64 32`).
-- Hospedar na Vercel: o projeto já está pronto para deploy direto.
+1. Vá em https://vercel.com/new
+2. **Import Git Repository** → escolha `consultoria-hub/avb-hub`
+3. Antes de clicar **Deploy**, na seção **Storage** (ou após o 1º deploy em **Storage → Create Database**), crie um **Postgres** — a Vercel preenche `DATABASE_URL` automaticamente.
+4. Em **Environment Variables**, adicione:
+   - `NEXTAUTH_SECRET` = uma string aleatória longa (gere com `openssl rand -base64 32`)
+   - `NEXTAUTH_URL` = a URL pública que a Vercel der (ex: `https://avb-hub.vercel.app`)
+5. Clique em **Deploy**. O `vercel-build` roda `prisma db push` + seed + `next build` automaticamente.
+
+Pronto — qualquer pessoa do grupo acessa pela URL pública.
