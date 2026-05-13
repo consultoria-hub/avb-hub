@@ -5,10 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { podeAcessarEmpresa } from "@/lib/permissions";
 import ProjetoDetalheClient from "./ProjetoDetalheClient";
 
-export default async function ProjetoDetalhePage({ params }: { params: { id: string } }) {
+export default async function ProjetoDetalhePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = (await getServerSession(authOptions))!;
   const projeto = await prisma.projeto.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       empresa: true,
       cliente: true,
