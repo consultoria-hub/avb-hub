@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Empresa {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  slug      String   @unique
+  cor       String   @default("#2563eb")
+  createdAt DateTime @default(now())
+
+  clientes        Cliente[]
+  projetos        Projeto[]
+  usuariosAcesso  UsuarioEmpresa[]
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senhaHash String
+  role      String   @default("COLABORADOR") // ADMIN | GERENTE | COLABORADOR
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  empresas           UsuarioEmpresa[]
+  projetosResponsavel Projeto[] @relation("ProjetoResponsavel")
+  tarefasResponsavel  Tarefa[]  @relation("TarefaResponsavel")
+}
+
+model UsuarioEmpresa {
+  id        String   @id @default(cuid())
+  usuarioId String
+  empresaId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, empresaId])
+}
+
+model Cliente {
+  id         String   @id @default(cuid())
+  nome       String
+  documento  String?
+  email      String?
+  telefone   String?
+  observacao String?
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  projetos   Projeto[]
+  createdAt  DateTime @default(now())
+}
+
+model Projeto {
+  id            String    @id @default(cuid())
+  titulo        String
+  descricao     String?
+  status        String    @default("A_FAZER") // A_FAZER | EM_ANDAMENTO | EM_REVISAO | CONCLUIDO
+  tag           String    @default("ESTRATEGICO") // FINANCEIRO | ESTRATEGICO | PESSOAS | COMERCIAL
+  prazo         DateTime?
+  empresaId     String
+  clienteId     String?
+  responsavelId String?
+  empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente       Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  responsavel   Usuario?  @relation("ProjetoResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+  tarefas       Tarefa[]
+  createdAt     DateTime  @default(now())
+}
+
+model Tarefa {
+  id            String    @id @default(cuid())
+  titulo        String
+  descricao     String?
+  status        String    @default("A_FAZER")
+  tag           String    @default("ESTRATEGICO")
+  prazo         DateTime?
+  projetoId     String
+  responsavelId String?
+  projeto       Projeto   @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  responsavel   Usuario?  @relation("TarefaResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+}
