@@ -14,7 +14,13 @@ export default async function ProjetoDetalhePage({ params }: { params: Promise<{
       empresa: true,
       cliente: true,
       responsavel: true,
-      tarefas: { include: { responsavel: true }, orderBy: { createdAt: "desc" } },
+      tarefas: {
+        include: {
+          responsavel: true,
+          tempos: { orderBy: { inicio: "desc" } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
   if (!projeto) notFound();
@@ -37,17 +43,27 @@ export default async function ProjetoDetalhePage({ params }: { params: Promise<{
         clienteNome: projeto.cliente?.nome ?? null,
         responsavelNome: projeto.responsavel?.nome ?? null,
       }}
-      tarefasIniciais={projeto.tarefas.map((t) => ({
-        id: t.id,
-        titulo: t.titulo,
-        descricao: t.descricao,
-        status: t.status,
-        tag: t.tag,
-        prazo: t.prazo?.toISOString() ?? null,
-        responsavelId: t.responsavelId,
-        responsavelNome: t.responsavel?.nome ?? null,
-      }))}
+      tarefasIniciais={projeto.tarefas.map((t) => {
+        const tempoConcluido = t.tempos
+          .filter((x) => x.fim && x.duracaoSegundos)
+          .reduce((acc, x) => acc + (x.duracaoSegundos || 0), 0);
+        const rodando = t.tempos.find((x) => !x.fim);
+        return {
+          id: t.id,
+          titulo: t.titulo,
+          descricao: t.descricao,
+          status: t.status,
+          tag: t.tag,
+          prazo: t.prazo?.toISOString() ?? null,
+          responsavelId: t.responsavelId,
+          responsavelNome: t.responsavel?.nome ?? null,
+          tempoTotalSegundos: tempoConcluido,
+          timerInicio: rodando ? rodando.inicio.toISOString() : null,
+          timerUsuarioId: rodando ? rodando.usuarioId : null,
+        };
+      })}
       usuarios={usuarios.map((u) => ({ id: u.id, nome: u.nome }))}
+      currentUserId={session.user.id}
     />
   );
 }

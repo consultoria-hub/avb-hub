@@ -32,11 +32,58 @@ export default function UsuariosClient({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Criar usuário
+  const [openCriar, setOpenCriar] = useState(false);
+  const [criarForm, setCriarForm] = useState<{
+    nome: string;
+    email: string;
+    senha: string;
+    role: string;
+    empresaIds: string[];
+  }>({ nome: "", email: "", senha: "", role: "COLABORADOR", empresaIds: [] });
+  const [criarSalvando, setCriarSalvando] = useState(false);
+  const [criarErro, setCriarErro] = useState<string | null>(null);
+
   function abrirEditar(u: Usuario) {
     setEditando(u);
     setErro(null);
     setForm({ role: u.role, ativo: u.ativo, empresaIds: [...u.empresaIds] });
     setOpen(true);
+  }
+
+  function abrirCriar() {
+    setCriarErro(null);
+    setCriarForm({ nome: "", email: "", senha: "", role: "COLABORADOR", empresaIds: [] });
+    setOpenCriar(true);
+  }
+
+  function toggleEmpresaCriar(id: string) {
+    setCriarForm((f) =>
+      f.empresaIds.includes(id)
+        ? { ...f, empresaIds: f.empresaIds.filter((x) => x !== id) }
+        : { ...f, empresaIds: [...f.empresaIds, id] },
+    );
+  }
+
+  async function criarUsuario(e: React.FormEvent) {
+    e.preventDefault();
+    setCriarSalvando(true);
+    setCriarErro(null);
+    try {
+      const res = await fetch("/api/usuarios/criar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(criarForm),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Erro ao criar.");
+      const novo = await res.json();
+      setUsuarios((us) => [novo, ...us]);
+      setOpenCriar(false);
+    } catch (e: any) {
+      setCriarErro(e.message);
+    } finally {
+      setCriarSalvando(false);
+    }
   }
 
   function toggleEmpresa(id: string) {
@@ -74,9 +121,14 @@ export default function UsuariosClient({
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold">Usuários</h1>
-        <p className="text-sm text-slate-500">Defina perfil de acesso e quais empresas cada usuário pode visualizar.</p>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Usuários</h1>
+          <p className="text-sm text-slate-500">Defina perfil de acesso e quais empresas cada usuário pode visualizar.</p>
+        </div>
+        <button className="btn-primary" onClick={abrirCriar}>
+          + Criar usuário
+        </button>
       </header>
 
       <input className="input max-w-sm" placeholder="Buscar..." value={busca} onChange={(e) => setBusca(e.target.value)} />
@@ -145,6 +197,62 @@ export default function UsuariosClient({
           </tbody>
         </table>
       </div>
+
+      <Modal open={openCriar} onClose={() => setOpenCriar(false)} title="Criar novo usuário">
+        <form onSubmit={criarUsuario} className="space-y-3">
+          <div>
+            <label className="label">Nome *</label>
+            <input className="input" value={criarForm.nome} onChange={(e) => setCriarForm({ ...criarForm, nome: e.target.value })} required />
+          </div>
+          <div>
+            <label className="label">Email *</label>
+            <input className="input" type="email" value={criarForm.email} onChange={(e) => setCriarForm({ ...criarForm, email: e.target.value })} required />
+          </div>
+          <div>
+            <label className="label">Senha inicial *</label>
+            <input className="input" type="text" minLength={6} value={criarForm.senha} onChange={(e) => setCriarForm({ ...criarForm, senha: e.target.value })} required />
+            <p className="text-xs text-slate-400 mt-1">Mín. 6 caracteres. Passe essa senha para o usuário no primeiro acesso.</p>
+          </div>
+          <div>
+            <label className="label">Perfil</label>
+            <select className="input" value={criarForm.role} onChange={(e) => setCriarForm({ ...criarForm, role: e.target.value })}>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {roleLabel[r]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Empresas que pode acessar</label>
+            <div className="space-y-1.5">
+              {empresas.map((e) => (
+                <label key={e.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={criarForm.empresaIds.includes(e.id)}
+                    onChange={() => toggleEmpresaCriar(e.id)}
+                  />
+                  <span className="inline-block w-2 h-2 rounded-full" style={{ background: e.cor }} />
+                  {e.nome}
+                </label>
+              ))}
+            </div>
+            {criarForm.role !== "ADMIN" && criarForm.empresaIds.length === 0 && (
+              <p className="text-xs text-amber-600 mt-2">Sem empresas selecionadas — o usuário não verá nenhum dado.</p>
+            )}
+          </div>
+          {criarErro && <div className="text-sm text-red-600">{criarErro}</div>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-ghost" onClick={() => setOpenCriar(false)}>
+              Cancelar
+            </button>
+            <button className="btn-primary" disabled={criarSalvando}>
+              {criarSalvando ? "Criando..." : "Criar usuário"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editando ? `Permissões — ${editando.nome}` : ""}>
         <form onSubmit={salvar} className="space-y-3">

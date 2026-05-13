@@ -1,8 +1,20 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/components/Modal";
-import { STATUSES, TAGS, statusLabel, tagLabel, tagClass, formatDate, isAtrasado, type Status, type Tag } from "@/lib/labels";
+import {
+  STATUSES,
+  TAGS,
+  statusLabel,
+  tagLabel,
+  tagClass,
+  formatDate,
+  isAtrasado,
+  formatDuracao,
+  formatCronometro,
+  type Status,
+  type Tag,
+} from "@/lib/labels";
 
 type ProjetoView = {
   id: string;
@@ -26,19 +38,72 @@ type TarefaView = {
   prazo: string | null;
   responsavelId: string | null;
   responsavelNome: string | null;
+  tempoTotalSegundos: number;
+  timerInicio: string | null;
+  timerUsuarioId: string | null;
 };
 
 export default function ProjetoDetalheClient({
   projeto,
   tarefasIniciais,
   usuarios,
+  currentUserId,
 }: {
   projeto: ProjetoView;
   tarefasIniciais: TarefaView[];
   usuarios: { id: string; nome: string }[];
+  currentUserId: string;
 }) {
   const [tarefas, setTarefas] = useState(tarefasIniciais);
   const [view, setView] = useState<"kanban" | "lista">("kanban");
+  const [agora, setAgora] = useState<number>(Date.now());
+
+  // Tick a cada segundo para atualizar cronômetros rodando
+  useEffect(() => {
+    const algumRodando = tarefas.some((t) => t.timerInicio);
+    if (!algumRodando) return;
+    const id = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [tarefas]);
+
+  function elapsedSegundos(t: TarefaView): number {
+    const base = t.tempoTotalSegundos || 0;
+    if (!t.timerInicio) return base;
+    const extra = Math.max(0, Math.floor((agora - new Date(t.timerInicio).getTime()) / 1000));
+    return base + extra;
+  }
+
+  async function iniciarTimer(t: TarefaView) {
+    const res = await fetch(`/api/tarefas/${t.id}/timer/start`, { method: "POST" });
+    if (!res.ok) return;
+    const novo = await res.json();
+    setTarefas((ts) =>
+      ts.map((x) => {
+        if (x.id === t.id) {
+          return { ...x, timerInicio: novo.inicio, timerUsuarioId: novo.usuarioId };
+        }
+        // Para outros timers do mesmo usuário (foram fechados no backend)
+        if (x.timerInicio && x.timerUsuarioId === currentUserId) {
+          const extra = Math.max(0, Math.floor((Date.now() - new Date(x.timerInicio).getTime()) / 1000));
+          return { ...x, timerInicio: null, timerUsuarioId: null, tempoTotalSegundos: x.tempoTotalSegundos + extra };
+        }
+        return x;
+      }),
+    );
+  }
+
+  async function pararTimer(t: TarefaView) {
+    const res = await fetch(`/api/tarefas/${t.id}/timer/stop`, { method: "POST" });
+    if (!res.ok) return;
+    const fechado = await res.json();
+    setTarefas((ts) =>
+      ts.map((x) =>
+        x.id === t.id
+          ? { ...x, timerInicio: null, timerUsuarioId: null, tempoTotalSegundos: x.tempoTotalSegundos + (fechado.duracaoSegundos || 0) }
+          : x,
+      ),
+    );
+  }
 
   const [open, setOpen] = useState(false);
   const [editando, setEditando] = useState<TarefaView | null>(null);
@@ -85,6 +150,7 @@ export default function ProjetoDetalheClient({
       if (!res.ok) throw new Error((await res.json()).error || "Erro ao salvar.");
       const saved = await res.json();
       const resp = usuarios.find((u) => u.id === saved.responsavelId);
+      const anterior = editando ? tarefas.find((t) => t.id === editando.id) : null;
       const v: TarefaView = {
         id: saved.id,
         titulo: saved.titulo,
@@ -94,6 +160,9 @@ export default function ProjetoDetalheClient({
         prazo: saved.prazo ?? null,
         responsavelId: saved.responsavelId,
         responsavelNome: saved.responsavel?.nome ?? resp?.nome ?? null,
+        tempoTotalSegundos: anterior?.tempoTotalSegundos ?? 0,
+        timerInicio: anterior?.timerInicio ?? null,
+        timerUsuarioId: anterior?.timerUsuarioId ?? null,
       };
       setTarefas((ts) => (editando ? ts.map((t) => (t.id === v.id ? v : t)) : [v, ...ts]));
       setOpen(false);
@@ -183,31 +252,55 @@ export default function ProjetoDetalheClient({
                   <span className="text-xs text-slate-500">{col.length}</span>
                 </div>
                 <div className="space-y-2 mt-1">
-                  {col.map((t) => (
-                    <div key={t.id} className="card p-3 cursor-pointer hover:shadow" onClick={() => abrirEditar(t)}>
-                      <div className="flex justify-between items-center mb-1">
-                        <span className={tagClass[t.tag as Tag]}>{tagLabel[t.tag as Tag]}</span>
+                  {col.map((t) => {
+                    const rodando = !!t.timerInicio;
+                    const segs = elapsedSegundos(t);
+                    return (
+                      <div key={t.id} className="card p-3 cursor-pointer hover:shadow" onClick={() => abrirEditar(t)}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className={tagClass[t.tag as Tag]}>{tagLabel[t.tag as Tag]}</span>
+                        </div>
+                        <div className="text-sm font-medium">{t.titulo}</div>
+                        <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
+                          <span>{t.responsavelNome || "—"}</span>
+                          <span className={isAtrasado(t.prazo, t.status) ? "text-red-600 font-medium" : ""}>
+                            {formatDate(t.prazo)}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                          <span className={`font-mono ${rodando ? "text-emerald-700 font-semibold" : "text-slate-500"}`}>
+                            {rodando ? "⏱ " : ""}{formatCronometro(segs)}
+                          </span>
+                          {rodando ? (
+                            <button
+                              className="px-2 py-0.5 rounded bg-red-100 text-red-700 hover:bg-red-200 text-[11px] font-medium"
+                              onClick={() => pararTimer(t)}
+                            >
+                              ■ Parar
+                            </button>
+                          ) : (
+                            <button
+                              className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-[11px] font-medium"
+                              onClick={() => iniciarTimer(t)}
+                            >
+                              ▶ Iniciar
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+                          {STATUSES.filter((x) => x !== s).map((x) => (
+                            <button
+                              key={x}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600"
+                              onClick={() => mudarStatus(t, x)}
+                            >
+                              → {statusLabel[x]}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="text-sm font-medium">{t.titulo}</div>
-                      <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
-                        <span>{t.responsavelNome || "—"}</span>
-                        <span className={isAtrasado(t.prazo, t.status) ? "text-red-600 font-medium" : ""}>
-                          {formatDate(t.prazo)}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
-                        {STATUSES.filter((x) => x !== s).map((x) => (
-                          <button
-                            key={x}
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600"
-                            onClick={() => mudarStatus(t, x)}
-                          >
-                            → {statusLabel[x]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {col.length === 0 && <div className="text-xs text-slate-400 px-2 py-3 text-center">Vazio</div>}
                 </div>
               </div>
@@ -224,34 +317,53 @@ export default function ProjetoDetalheClient({
                 <th className="text-left px-4 py-2">Status</th>
                 <th className="text-left px-4 py-2">Responsável</th>
                 <th className="text-left px-4 py-2">Prazo</th>
+                <th className="text-left px-4 py-2">Tempo</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {tarefas.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 font-medium">{t.titulo}</td>
-                  <td className="px-4 py-2">
-                    <span className={tagClass[t.tag as Tag]}>{tagLabel[t.tag as Tag]}</span>
-                  </td>
-                  <td className="px-4 py-2 text-xs">{statusLabel[t.status as Status]}</td>
-                  <td className="px-4 py-2 text-slate-600">{t.responsavelNome || "—"}</td>
-                  <td className={`px-4 py-2 text-xs ${isAtrasado(t.prazo, t.status) ? "text-red-600 font-medium" : "text-slate-600"}`}>
-                    {formatDate(t.prazo)}
-                  </td>
-                  <td className="px-4 py-2 text-right space-x-2 whitespace-nowrap">
-                    <button className="text-brand-600 text-xs hover:underline" onClick={() => abrirEditar(t)}>
-                      Editar
-                    </button>
-                    <button className="text-red-600 text-xs hover:underline" onClick={() => excluir(t)}>
-                      Excluir
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {tarefas.map((t) => {
+                const rodando = !!t.timerInicio;
+                const segs = elapsedSegundos(t);
+                return (
+                  <tr key={t.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2 font-medium">{t.titulo}</td>
+                    <td className="px-4 py-2">
+                      <span className={tagClass[t.tag as Tag]}>{tagLabel[t.tag as Tag]}</span>
+                    </td>
+                    <td className="px-4 py-2 text-xs">{statusLabel[t.status as Status]}</td>
+                    <td className="px-4 py-2 text-slate-600">{t.responsavelNome || "—"}</td>
+                    <td className={`px-4 py-2 text-xs ${isAtrasado(t.prazo, t.status) ? "text-red-600 font-medium" : "text-slate-600"}`}>
+                      {formatDate(t.prazo)}
+                    </td>
+                    <td className="px-4 py-2 text-xs whitespace-nowrap">
+                      <span className={`font-mono ${rodando ? "text-emerald-700 font-semibold" : "text-slate-600"}`}>
+                        {rodando ? "⏱ " : ""}{formatCronometro(segs)}
+                      </span>
+                      {rodando ? (
+                        <button className="ml-2 text-[11px] text-red-600 hover:underline" onClick={() => pararTimer(t)}>
+                          parar
+                        </button>
+                      ) : (
+                        <button className="ml-2 text-[11px] text-emerald-700 hover:underline" onClick={() => iniciarTimer(t)}>
+                          iniciar
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right space-x-2 whitespace-nowrap">
+                      <button className="text-brand-600 text-xs hover:underline" onClick={() => abrirEditar(t)}>
+                        Editar
+                      </button>
+                      <button className="text-red-600 text-xs hover:underline" onClick={() => excluir(t)}>
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {tarefas.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">
                     Nenhuma tarefa.
                   </td>
                 </tr>

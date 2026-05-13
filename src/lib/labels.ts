@@ -44,3 +44,22 @@ export function isAtrasado(prazo: string | Date | null | undefined, status: stri
   if (!prazo || status === "CONCLUIDO") return false;
   return new Date(prazo).getTime() < Date.now();
 }
+
+export function formatDuracao(segundos: number): string {
+  if (!segundos || segundos < 0) return "0min";
+  if (segundos < 60) return `${segundos}s`;
+  const h = Math.floor(segundos / 3600);
+  const m = Math.floor((segundos % 3600) / 60);
+  if (h === 0) return `${m}min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}min`;
+}
+
+export function formatCronometro(segundos: number): string {
+  const s = Math.max(0, Math.floor(segundos));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(ss)}`;
+}

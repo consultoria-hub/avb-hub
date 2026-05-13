@@ -31,6 +31,7 @@ model Usuario {
   empresas           UsuarioEmpresa[]
   projetosResponsavel Projeto[] @relation("ProjetoResponsavel")
   tarefasResponsavel  Tarefa[]  @relation("TarefaResponsavel")
+  tempos              TempoTarefa[]
 }
 
 model UsuarioEmpresa {
@@ -84,5 +85,21 @@ model Tarefa {
   responsavelId String?
   projeto       Projeto   @relation(fields: [projetoId], references: [id], onDelete: Cascade)
   responsavel   Usuario?  @relation("TarefaResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+  tempos        TempoTarefa[]
   createdAt     DateTime  @default(now())
+}
+
+model TempoTarefa {
+  id              String    @id @default(cuid())
+  tarefaId        String
+  usuarioId       String?
+  inicio          DateTime  @default(now())
+  fim             DateTime?
+  duracaoSegundos Int?
+  notas           String?
+  tarefa          Tarefa    @relation(fields: [tarefaId], references: [id], onDelete: Cascade)
+  usuario         Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([tarefaId])
+  @@index([usuarioId])
 }
